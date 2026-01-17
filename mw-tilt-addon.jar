@@ -1,0 +1,358 @@
+package com.motivewave.platform.study.general;
+
+import com.motivewave.platform.sdk.common.*;
+import com.motivewave.platform.sdk.order_mgmt.OrderContext;
+import com.motivewave.platform.sdk.study.StudyHeader;
+import javax.swing.*;
+import java.awt.*;
+import java.io.File;
+import java.io.IOException;
+import java.text.DecimalFormat;
+
+@StudyHeader(
+  namespace = "com.mycompany",
+  id = "DRAWDOWN_MONITOR",
+  name = "Drawdown Monitor",
+  desc = "Monitors account balance and triggers script on drawdown",
+  menu = "Custom",
+  overlay = false,
+  strategy = true,
+  autoEntry = false,
+  manualEntry = false,
+  supportsLongShortChoice = false,
+  supportsUnrealizedPL = false,
+  supportsRealizedPL = false,
+  supportsTotalPL = false,
+  supportsEntryPrice = false,
+  supportsPositionPrice = false,
+  supportsStopPL = false,
+  supportsTargetPL = false,
+  supportsRiskRatio = false,
+  supportsTIF = false,
+  supportsPositions = false,
+  supportsOrders = false,
+  showTradeOptions = false
+)
+public class DrawdownMonitor extends com.motivewave.platform.sdk.study.Study {
+  
+  private double initialBalance = 0;
+  private double drawdownPercent = 5.0;
+  private boolean scriptTriggered = false;
+  private String scriptPath = System.getProperty("user.home") + "/scripts/drawdown_alert.sh";
+  
+  private JFrame configFrame;
+  private JTextField drawdownField;
+  private JTextField scriptPathField;
+  private JLabel balanceLabel;
+  private JLabel drawdownLabel;
+  
+  private final DecimalFormat df = new DecimalFormat("#,##0.00");
+  
+  @Override
+  public void initialize(Defaults defaults) {
+    setMinBars(1);
+    
+    // Load settings
+    drawdownPercent = getSettings().getDouble("DRAWDOWN_PCT", 5.0);
+    scriptPath = getSettings().getString("SCRIPT_PATH", 
+      System.getProperty("user.home") + "/scripts/drawdown_alert.sh");
+    scriptTriggered = getSettings().getBoolean("TRIGGERED", false);
+    initialBalance = getSettings().getDouble("INITIAL_BALANCE", 0.0);
+  }
+  
+  @Override
+  public void onActivate(OrderContext ctx) {
+    // Called when strategy is activated
+    if (initialBalance == 0) {
+      initialBalance = ctx.getCashBalance();
+      getSettings().setDouble("INITIAL_BALANCE", initialBalance);
+      getSettings().save();
+    }
+    
+    // Show configuration dialog
+    SwingUtilities.invokeLater(() -> showConfigurationDialog(ctx));
+    
+    info("Drawdown Monitor activated. Initial balance: $" + df.format(initialBalance));
+  }
+  
+  @Override
+  public void onBarUpdate(OrderContext ctx) {
+    // Check drawdown on each bar update
+    if (!scriptTriggered) {
+      checkDrawdown(ctx);
+    }
+  }
+  
+  @Override
+  public void onTick(OrderContext ctx) {
+    // Check drawdown on each tick for real-time monitoring
+    if (!scriptTriggered) {
+      checkDrawdown(ctx);
+    }
+  }
+  
+  private void checkDrawdown(OrderContext ctx) {
+    if (scriptTriggered) return;
+    
+    try {
+      double currentBalance = ctx.getCashBalance();
+      
+      // Update display if dialog is open
+      if (balanceLabel != null) {
+        updateBalanceDisplay(currentBalance);
+      }
+      
+      if (initialBalance == 0) {
+        initialBalance = currentBalance;
+        return;
+      }
+      
+      double drawdownAmount = initialBalance - currentBalance;
+      double drawdownPct = (drawdownAmount / initialBalance) * 100;
+      
+      if (drawdownPct >= drawdownPercent) {
+        triggerScript(currentBalance, drawdownPct);
+      }
+      
+    } catch (Exception e) {
+      error("Error checking drawdown: " + e.getMessage());
+    }
+  }
+  
+  private void triggerScript(double currentBalance, double drawdownPct) {
+    scriptTriggered = true;
+    getSettings().setBoolean("TRIGGERED", true);
+    getSettings().save();
+    
+    info("DRAWDOWN ALERT! Current: $" + df.format(currentBalance) + 
+         " | Drawdown: " + df.format(drawdownPct) + "%");
+    
+    // Execute shell script
+    try {
+      File scriptFile = new File(scriptPath);
+      if (!scriptFile.exists()) {
+        error("Script not found: " + scriptPath);
+        showAlert("Script file not found at: " + scriptPath);
+        return;
+      }
+      
+      // Make script executable (Unix/Linux/Mac)
+      if (!System.getProperty("os.name").toLowerCase().contains("windows")) {
+        ProcessBuilder chmodPb = new ProcessBuilder("chmod", "+x", scriptPath);
+        chmodPb.start().waitFor();
+      }
+      
+      ProcessBuilder pb = new ProcessBuilder(
+        "/bin/bash",
+        scriptPath,
+        String.valueOf(initialBalance),
+        String.valueOf(currentBalance),
+        String.valueOf(drawdownPct)
+      );
+      
+      pb.redirectErrorStream(true);
+      Process process = pb.start();
+      
+      info("Drawdown script executed successfully");
+      showAlert("Drawdown trigger activated!\n" +
+                "Initial: $" + df.format(initialBalance) + "\n" +
+                "Current: $" + df.format(currentBalance) + "\n" +
+                "Drawdown: " + df.format(drawdownPct) + "%\n" +
+                "Script executed: " + scriptPath);
+      
+    } catch (IOException | InterruptedException e) {
+      error("Failed to execute script: " + e.getMessage());
+      showAlert("Failed to execute script: " + e.getMessage());
+    }
+  }
+  
+  private void showConfigurationDialog(OrderContext ctx) {
+    configFrame = new JFrame("Drawdown Monitor Configuration");
+    configFrame.setDefaultCloseOperation(JFrame.HIDE_ON_CLOSE);
+    configFrame.setSize(500, 400);
+    
+    JPanel panel = new JPanel(new GridBagLayout());
+    panel.setBorder(BorderFactory.createEmptyBorder(15, 15, 15, 15));
+    GridBagConstraints gbc = new GridBagConstraints();
+    gbc.insets = new Insets(5, 5, 5, 5);
+    gbc.fill = GridBagConstraints.HORIZONTAL;
+    
+    // Title
+    gbc.gridx = 0; gbc.gridy = 0; gbc.gridwidth = 2;
+    JLabel titleLabel = new JLabel("Drawdown Monitor");
+    titleLabel.setFont(new Font("Arial", Font.BOLD, 16));
+    panel.add(titleLabel, gbc);
+    
+    // Balance info
+    gbc.gridy = 1;
+    balanceLabel = new JLabel("Initial Balance: $" + df.format(initialBalance));
+    balanceLabel.setFont(new Font("Arial", Font.BOLD, 14));
+    panel.add(balanceLabel, gbc);
+    
+    gbc.gridy = 2;
+    drawdownLabel = new JLabel("Current Drawdown: 0.00%");
+    drawdownLabel.setFont(new Font("Arial", Font.PLAIN, 12));
+    panel.add(drawdownLabel, gbc);
+    
+    // Current balance
+    gbc.gridy = 3;
+    JLabel currentLabel = new JLabel("Current Balance: $" + df.format(ctx.getCashBalance()));
+    currentLabel.setFont(new Font("Arial", Font.PLAIN, 12));
+    panel.add(currentLabel, gbc);
+    
+    // Separator
+    gbc.gridy = 4;
+    panel.add(new JSeparator(), gbc);
+    
+    // Drawdown trigger
+    gbc.gridy = 5; gbc.gridwidth = 1;
+    panel.add(new JLabel("Drawdown Trigger (%):"), gbc);
+    
+    gbc.gridx = 1;
+    drawdownField = new JTextField(String.valueOf(drawdownPercent), 10);
+    panel.add(drawdownField, gbc);
+    
+    // Script path
+    gbc.gridx = 0; gbc.gridy = 6;
+    panel.add(new JLabel("Script Path:"), gbc);
+    
+    gbc.gridx = 1;
+    scriptPathField = new JTextField(scriptPath, 30);
+    panel.add(scriptPathField, gbc);
+    
+    // Browse button
+    gbc.gridx = 0; gbc.gridy = 7; gbc.gridwidth = 2;
+    JButton browseButton = new JButton("Browse for Script...");
+    browseButton.addActionListener(e -> browseForScript());
+    panel.add(browseButton, gbc);
+    
+    // Status
+    gbc.gridy = 8;
+    JLabel statusLabel = new JLabel(scriptTriggered ? 
+      "Status: TRIGGERED - Script Executed" : "Status: Monitoring Active");
+    statusLabel.setForeground(scriptTriggered ? Color.RED : new Color(0, 128, 0));
+    statusLabel.setFont(new Font("Arial", Font.BOLD, 12));
+    panel.add(statusLabel, gbc);
+    
+    // Buttons
+    JPanel buttonPanel = new JPanel(new FlowLayout());
+    
+    JButton saveButton = new JButton("Save Settings");
+    saveButton.addActionListener(e -> saveSettings());
+    buttonPanel.add(saveButton);
+    
+    JButton resetButton = new JButton("Reset Trigger");
+    resetButton.addActionListener(e -> resetTrigger(ctx));
+    buttonPanel.add(resetButton);
+    
+    JButton refreshButton = new JButton("Refresh Balance");
+    refreshButton.addActionListener(e -> updateBalanceDisplay(ctx.getCashBalance()));
+    buttonPanel.add(refreshButton);
+    
+    JButton closeButton = new JButton("Close");
+    closeButton.addActionListener(e -> configFrame.setVisible(false));
+    buttonPanel.add(closeButton);
+    
+    gbc.gridy = 9;
+    panel.add(buttonPanel, gbc);
+    
+    // Instructions
+    gbc.gridy = 10;
+    JTextArea instructions = new JTextArea(
+      "Instructions:\n" +
+      "1. Set drawdown % threshold\n" +
+      "2. Choose script location\n" +
+      "3. Script receives: initial_balance current_balance drawdown_percent\n" +
+      "4. Reset trigger after handling alert"
+    );
+    instructions.setEditable(false);
+    instructions.setBackground(panel.getBackground());
+    instructions.setFont(new Font("Arial", Font.PLAIN, 10));
+    panel.add(instructions, gbc);
+    
+    configFrame.add(panel);
+    configFrame.setLocationRelativeTo(null);
+    configFrame.setVisible(true);
+  }
+  
+  private void browseForScript() {
+    JFileChooser fileChooser = new JFileChooser(System.getProperty("user.home") + "/scripts");
+    fileChooser.setFileSelectionMode(JFileChooser.FILES_ONLY);
+    
+    int result = fileChooser.showOpenDialog(configFrame);
+    if (result == JFileChooser.APPROVE_OPTION) {
+      scriptPathField.setText(fileChooser.getSelectedFile().getAbsolutePath());
+    }
+  }
+  
+  private void saveSettings() {
+    try {
+      drawdownPercent = Double.parseDouble(drawdownField.getText());
+      scriptPath = scriptPathField.getText();
+      
+      getSettings().setDouble("DRAWDOWN_PCT", drawdownPercent);
+      getSettings().setString("SCRIPT_PATH", scriptPath);
+      getSettings().save();
+      
+      JOptionPane.showMessageDialog(configFrame, 
+        "Settings saved successfully!\n" +
+        "Drawdown Trigger: " + drawdownPercent + "%\n" +
+        "Script: " + scriptPath, 
+        "Success", 
+        JOptionPane.INFORMATION_MESSAGE);
+        
+    } catch (NumberFormatException e) {
+      JOptionPane.showMessageDialog(configFrame, 
+        "Invalid drawdown percentage!\nPlease enter a valid number.", 
+        "Error", 
+        JOptionPane.ERROR_MESSAGE);
+    }
+  }
+  
+  private void resetTrigger(OrderContext ctx) {
+    scriptTriggered = false;
+    initialBalance = ctx.getCashBalance();
+    
+    getSettings().setBoolean("TRIGGERED", false);
+    getSettings().setDouble("INITIAL_BALANCE", initialBalance);
+    getSettings().save();
+    
+    if (balanceLabel != null) {
+      updateBalanceDisplay(ctx.getCashBalance());
+    }
+    
+    JOptionPane.showMessageDialog(configFrame, 
+      "Trigger reset successfully!\n" +
+      "New initial balance: $" + df.format(initialBalance), 
+      "Reset Complete", 
+      JOptionPane.INFORMATION_MESSAGE);
+    
+    info("Drawdown monitor trigger reset. New initial balance: $" + df.format(initialBalance));
+  }
+  
+  private void updateBalanceDisplay(double currentBalance) {
+    if (balanceLabel != null && initialBalance > 0) {
+      double drawdownAmount = initialBalance - currentBalance;
+      double drawdownPct = (drawdownAmount / initialBalance) * 100;
+      
+      balanceLabel.setText("Initial: $" + df.format(initialBalance) + 
+                          " | Current: $" + df.format(currentBalance));
+      drawdownLabel.setText("Current Drawdown: " + df.format(drawdownPct) + "%");
+      
+      if (drawdownPct >= drawdownPercent) {
+        drawdownLabel.setForeground(Color.RED);
+      } else if (drawdownPct > drawdownPercent * 0.8) {
+        drawdownLabel.setForeground(Color.ORANGE);
+      } else {
+        drawdownLabel.setForeground(new Color(0, 128, 0));
+      }
+    }
+  }
+  
+  private void showAlert(String message) {
+    SwingUtilities.invokeLater(() -> 
+      JOptionPane.showMessageDialog(null, message, "Drawdown Alert", 
+        JOptionPane.WARNING_MESSAGE)
+    );
+  }
+}
