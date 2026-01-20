@@ -1,29 +1,11 @@
 #!/bin/bash
 
 # ======================================================
-# ---- RECURSION GUARD ---------------------------------
-if [[ -n "$AM_LOCK_UI" ]]; then
-  UI_MODE=1
-else
-  export AM_LOCK_UI=1
-  UI_MODE=0
-fi
-
-# ======================================================
-# ---- STATE -------------------------------------------
-DATE_FILE="$HOME/.rithmic_lock_date"
-TODAY=$(date +%Y-%m-%d)
-
-if [[ ! -f "$DATE_FILE" ]] || [[ "$(cat "$DATE_FILE")" != "$TODAY" ]]; then
-  echo "$TODAY" > "$DATE_FILE"
-fi
-
-# ======================================================
 # ---- OPEN TERMINAL (EXACTLY ONE WINDOW) --------------
 if [[ "$UI_MODE" -eq 0 ]]; then
   /usr/bin/osascript <<'EOF'
 tell application "Terminal"
-  do script "AM_LOCK_UI=1 /bin/bash /Users/mikeb/Scripts/am-lock.sh"
+  do script "AM_LOCK_UI=1 /bin/bash /Users/mikeb/Scripts/prime.sh"
   activate
 end tell
 EOF
@@ -32,7 +14,7 @@ fi
 
 # ======================================================
 # ---- 25 MINUTE COUNTDOWN -----------------------------
-TOTAL_SECONDS=$((1 * 60))
+TOTAL_SECONDS=$((25 * 60))
 END_TIME=$((SECONDS + TOTAL_SECONDS))
 
 tput civis   # hide cursor
