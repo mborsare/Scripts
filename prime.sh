@@ -26,7 +26,7 @@ fi
 
 # ======================================================
 # ---- 25 MINUTE COUNTDOWN -----------------------------
-TOTAL_SECONDS=$((1* 60))
+TOTAL_SECONDS=$((25* 60))
 END_TIME=$((SECONDS + TOTAL_SECONDS))
 
 tput civis   # hide cursor
