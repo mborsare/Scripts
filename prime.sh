@@ -25,11 +25,48 @@ EOF
 fi
 
 # ======================================================
-# ---- 25 MINUTE COUNTDOWN -----------------------------
-TOTAL_SECONDS=$((25* 60))
+# ---- FLOW SETTLE WINDOW ------------------------------
+# ======================================================
+clear
+echo
+echo "How long do you need to settle in and feel flow?"
+echo
+echo "  1) 1 minute (testing)"
+echo "  2) 15 minutes"
+echo "  3) 20 minutes"
+echo "  4) 25 minutes"
+echo
+read -r -p "Select (1–4): " FLOW_CHOICE
+
+case "$FLOW_CHOICE" in
+  1) FLOW_MINUTES=1 ;;
+  2) FLOW_MINUTES=15 ;;
+  3) FLOW_MINUTES=20 ;;
+  4) FLOW_MINUTES=25 ;;
+  *)
+    echo "Invalid choice."
+    exit 1
+    ;;
+esac
+
+echo
+echo "✔ Flow window set: ${FLOW_MINUTES} minutes"
+sleep 1
+
+# ======================================================
+# ---- COUNTDOWN ---------------------------------------
+# ======================================================
+TOTAL_SECONDS=$((FLOW_MINUTES * 60))
 END_TIME=$((SECONDS + TOTAL_SECONDS))
 
 tput civis   # hide cursor
+
+# ======================================================
+# ---- STAR GRID CONFIG --------------------------------
+# ======================================================
+GRID_COLS=80
+GRID_ROWS=10
+GRID_SIZE=$((GRID_COLS * GRID_ROWS))
 
 big_time() {
   local t="$1"
@@ -41,6 +78,11 @@ big_time() {
 draw_timer() {
   clear
 
+  local elapsed="$1"
+  local remaining=$((TOTAL_SECONDS - elapsed))
+
+  local filled=$(( (elapsed * GRID_SIZE) / TOTAL_SECONDS ))
+
   echo
   echo "
                                ▒██  ███                 
@@ -49,11 +91,12 @@ draw_timer() {
  █▒      ███   █████         █████    █    ░███░  █████ 
  █      ▓▓ ▒█    █             █      █    █▒ ▒█    █   
  █   ██ █   █    █             █      █        █    █   
- █    █ █████    █             █      █    ▒████    █   
+ █   █ █████    █             █      █    ▒████    █   
  █▒   █ █        █             █      █    █▒  █    █   
  ▒█░ ░█ ▓▓  █    █░            █      █░   █░ ▓█    █░  
   ▒███▒  ███▒    ▒██           █      ▒██  ▒██▒█    ▒██ 
   "
+
   echo
   echo "
    ▄▄▄▄▀ █▄▄▄▄ ██   ██▄   ▄███▄       ▄█▄    ██   █    █▀▄▀█ 
@@ -64,6 +107,7 @@ draw_timer() {
           ▀      █                             █         ▀   
                 ▀                             ▀              
   "
+
   echo
   echo "
   ▖▖              ▘    ▗ ▌                
@@ -71,7 +115,7 @@ draw_timer() {
 ▙▌▌ ▙▌▙▖▌▌▙▖▙▌  ▌▄▌  ▐▖▌▌▙▖  ▙▖▌▌▙▖▌▌▌▙▌
     ▄▌      ▄▌                        ▄▌
   "
-  echo
+
   echo
   echo "
  ██▓███   ██▀███   ██▓ ███▄ ▄███▓▓█████ 
@@ -85,12 +129,40 @@ draw_timer() {
             ░      ░         ░      ░  ░
   "
 
-  printf "           %s           " "$(big_time "$1")"
+  printf "\n          -%s           \n\n" "$(big_time "$remaining")"
+
+  local i=0
+  for ((r=0; r<GRID_ROWS; r++)); do
+    line=""
+    for ((c=0; c<GRID_COLS; c++)); do
+      if (( i < filled )); then
+        line+="*"
+      else
+        line+=" "
+      fi
+      ((i++))
+    done
+    echo "   $line"
+  done
 }
 
 while (( SECONDS < END_TIME )); do
-  remaining=$((END_TIME - SECONDS))
-  draw_timer "$remaining"
+  elapsed=$((SECONDS + TOTAL_SECONDS - END_TIME))
+  draw_timer "$elapsed"
+  sleep 1
+done
+
+# ======================================================
+# ---- SESSION TIME (RANDOMIZED 30-45 MIN) -------------
+# ======================================================
+SESSION_MINUTES=$((30 + RANDOM % 16))  # Random between 30-45
+SESSION_SECONDS=$((SESSION_MINUTES * 60))
+TOTAL_SECONDS=$SESSION_SECONDS
+END_TIME=$((SECONDS + SESSION_SECONDS))
+
+while (( SECONDS < END_TIME )); do
+  elapsed=$((SECONDS + TOTAL_SECONDS - END_TIME))
+  draw_timer "$elapsed"
   sleep 1
 done
 
@@ -141,6 +213,7 @@ echo "
 States are chemical. They come and go. You are all of them. Discipline is state control.
 "
 
+
 # ======================================================
 # ---- KILL MOTIVEWAVE ---------------------------------
 pkill -f MotiveWave || true
@@ -161,5 +234,4 @@ echo "nameserver 127.0.0.1" \
   | sudo tee /etc/resolver/rithmic.com >/dev/null
 
 echo "✔ DNS block active (survives Wi-Fi toggles)."
-echo
 echo
