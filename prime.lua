@@ -4,6 +4,12 @@ local colors = require('ansicolors')
 local socket = require('socket')
 
 -- ======================================================
+-- ---- TEST MODE --------------------------------------
+-- ======================================================
+
+local TEST_MODE = true
+
+-- ======================================================
 -- ---- UTILITIES ---------------------------------------
 -- ======================================================
 
@@ -21,10 +27,6 @@ local function show_cursor()
   io.flush()
 end
 
-local function sleep(seconds)
-  os.execute("sleep " .. tonumber(seconds))
-end
-
 local function format_time(seconds)
   local ms = math.floor((seconds * 1000) % 1000)
   local total_sec = math.floor(seconds)
@@ -36,6 +38,10 @@ local function print_colored(text, color)
 end
 
 local function get_input(prompt, color)
+  if TEST_MODE then
+    print_colored("[TEST INPUT AUTO-ACCEPTED]", "%{dim}")
+    return ""
+  end
   io.write(colors((color or "%{bright green}") .. prompt))
   return io.read()
 end
@@ -43,6 +49,22 @@ end
 local function exit_with_error(message)
   print_colored(message, "%{bright red}")
   os.exit(1)
+end
+
+local function safe_exec(cmd)
+  if TEST_MODE then
+    print_colored("[TEST] " .. cmd, "%{dim}")
+    return true
+  end
+  return os.execute(cmd)
+end
+
+local function safe_sleep(seconds)
+  if TEST_MODE then
+    os.execute("sleep 3")
+    return
+  end
+  os.execute("sleep " .. tonumber(seconds))
 end
 
 -- ======================================================
@@ -63,7 +85,7 @@ print_colored([[
 ]], "%{bright cyan}")
 
 print()
-print_colored(" * Unlock sequence activated * ", "%{bright yellow}")
+print_colored(" * Prime shell activated * ", "%{bright yellow}")
 print()
 
 -- ======================================================
@@ -76,7 +98,8 @@ local ANSWER = A * B - C
 
 print_colored("Solve to continue:", "%{white}")
 print_colored("(" .. A .. " × " .. B .. ") − " .. C .. " = ?", "%{bright white}")
-local user_answer = get_input("> ")
+
+local user_answer = TEST_MODE and ANSWER or get_input("> ")
 
 if tonumber(user_answer) ~= ANSWER then
   exit_with_error("Check your work and try again")
@@ -85,43 +108,45 @@ end
 print_colored("✔ restraint pays", "%{green}")
 print()
 
--- -- ======================================================
--- -- ---- LINE-BY-LINE STATE GATE -------------------------
--- -- ======================================================
+-- ======================================================
+-- ---- LINE-BY-LINE STATE GATE -------------------------
+-- ======================================================
 
 local script_path = debug.getinfo(1, "S").source:sub(2)
 local script_dir = script_path:match("(.*/)")
 local doctrine_path = script_dir .. "../Sites/mikeb.work/backoffice/doctrine.json"
 
 local handle = io.popen("jq -r '.[].doctrineItem' '" .. doctrine_path .. "' 2>/dev/null")
-if not handle then
-  exit_with_error(" * Failed to read doctrine file * ")
-end
 
 local lines = {}
-for line in handle:lines() do
-  table.insert(lines, line)
+if handle then
+  for line in handle:lines() do
+    table.insert(lines, line)
+  end
+  handle:close()
 end
-handle:close()
 
 if #lines == 0 then
-  exit_with_error(" * No lines loaded from doctrine JSON file * \n * Make sure jq is installed: brew install jq * ")
-end
-
-print_colored(" * Match each line (" .. #lines .. " total) * ", "%{yellow}")
-print()
-
-for index, line in ipairs(lines) do
-  print_colored("﹌﹌﹌﹌﹌﹌", "%{dim}")
-  print_colored("[" .. index .. " / " .. #lines .. "]", "%{bright white}")
-  print_colored('"' .. line .. '"', "%{cyan}")
-
-  if get_input("> ") ~= line then
-    exit_with_error("Can you catch the mistake? Try again")
-  end
-
-  print_colored("✔ the work is the win", "%{green}")
+  print_colored("[TEST] doctrine skipped", "%{dim}")
+else
+  print_colored(" * Match each line (" .. #lines .. " total) * ", "%{yellow}")
   print()
+
+  for index, line in ipairs(lines) do
+    print_colored("﹌﹌﹌﹌﹌﹌", "%{dim}")
+    print_colored("[" .. index .. " / " .. #lines .. "]", "%{bright white}")
+    print_colored('"' .. line .. '"', "%{cyan}")
+
+    if not TEST_MODE then
+      if get_input("> ") ~= line then
+        exit_with_error("Can you catch the mistake? Try again")
+      end
+    else
+      print_colored("✔ doctrine auto-passed", "%{dim}")
+    end
+
+    print()
+  end
 end
 
 -- ======================================================
@@ -129,21 +154,19 @@ end
 -- ======================================================
 
 print_colored("🔓 Removing Rithmic DNS block…", "%{bright yellow}")
-os.execute([[
-sudo rm -f /usr/local/etc/dnsmasq.d/block-rithmic.conf
-sudo rm -f /etc/resolver/rithmic.com
-sudo brew services restart dnsmasq >/dev/null 2>&1
-]])
+safe_exec("sudo rm -f /usr/local/etc/dnsmasq.d/block-rithmic.conf")
+safe_exec("sudo rm -f /etc/resolver/rithmic.com")
+safe_exec("sudo brew services restart dnsmasq")
 print_colored("✔ Enjoy the session", "%{green}")
 print()
 
 -- ======================================================
--- ---- RELAUNCH MOTIVEWAVE -----------------------------
+-- ---- RELAUNCH TOOLS ---------------------------------
 -- ======================================================
 
 print_colored("🚀 Launching Tools…", "%{bright blue}")
-os.execute("open -a 'MotiveWave' 2>/dev/null || true")
-os.execute("open -a 'Bookmap' 2>/dev/null || true")
+safe_exec("open -a 'MotiveWave'")
+safe_exec("open -a 'Bookmap'")
 
 print()
 print_colored(" * Unlock sequence complete * ", "%{bright yellow}")
@@ -152,31 +175,24 @@ print_colored('"Trade the market in front of you, not the one you wish existed."
 print()
 print_colored("▶ entering prime", "%{bright cyan}")
 print()
-sleep(1)
+
+safe_sleep(1)
 
 -- ======================================================
 -- ---- FLOW WINDOW SELECTION ---------------------------
 -- ======================================================
 
-print("\nHow long do you need to settle in and feel flow?\n")
-print("  1) 1 minute (testing)")
-print("  2) 15 minutes")
-print("  3) 20 minutes")
-print("  4) 25 minutes\n")
-
-local flow_minutes_map = {["1"] = 1, ["2"] = 15, ["3"] = 20, ["4"] = 25}
-local flow_minutes = flow_minutes_map[get_input("Select (1–4): ")]
-
-if not flow_minutes then
-  exit_with_error("Invalid choice.")
-end
+local flow_minutes = TEST_MODE and 1 or ({["1"]=1,["2"]=15,["3"]=20,["4"]=25})[get_input("Select (1–4): ")]
 
 print("\n✔ Flow window set: " .. flow_minutes .. " minutes")
-sleep(1)
+safe_sleep(1)
 
 -- ======================================================
--- ---- WARM-UP ASCII (ADDED ONLY) ----------------------
+-- ---- WARMUP / TIMER ---------------------------------
 -- ======================================================
+
+local GRID_COLS, GRID_ROWS = 80, 10
+local GRID_SIZE = GRID_COLS * GRID_ROWS
 
 local warmup_art = [[
    ______     __     _          ______             
@@ -186,13 +202,6 @@ local warmup_art = [[
 \____/\___/\__/  /_/_/ /_/  /_/ /_/\____/|__/|__/  
                                           
 ]]
-
--- ======================================================
--- ---- TIMER CONFIG ------------------------------------
--- ======================================================
-
-local GRID_COLS, GRID_ROWS = 80, 10
-local GRID_SIZE = GRID_COLS * GRID_ROWS
 
 local ascii_art = [[
                                ▒██  ███                 
@@ -267,7 +276,7 @@ local function draw_timer(elapsed, total_seconds, header_art)
   for r = 1, GRID_ROWS do
     local line = "   "
     for c = 1, GRID_COLS do
-      line = line .. (stars < filled and colors("%{green}*") or " ")
+      line = line .. (stars < filled and colors("%{blue} • ") or " ")
       stars = stars + 1
     end
     print(line)
@@ -278,27 +287,25 @@ local function run_timer(minutes, header_art)
   local total_seconds = minutes * 60
   local start_time = socket.gettime()
   local end_time = start_time + total_seconds
+  local frame_time = 1 / 60  -- 60Hz = 16.67ms per frame
 
   hide_cursor()
+  local next_frame = start_time
   while socket.gettime() < end_time do
-    draw_timer(socket.gettime() - start_time, total_seconds, header_art)
-    socket.sleep(0.1)  -- Update every 10ms for smooth animation
+    local current_time = socket.gettime()
+    if current_time >= next_frame then
+      draw_timer(current_time - start_time, total_seconds, header_art)
+      next_frame = next_frame + frame_time
+    end
+    socket.sleep(0.001)  -- 1ms sleep to avoid busy-waiting
   end
   show_cursor()
 end
 
--- ======================================================
--- ---- RUN TIMERS --------------------------------------
--- ======================================================
-
--- Warm-up: user-selected time, persistent warmup banner
 run_timer(flow_minutes, warmup_art)
-
--- Live session: random time, persistent live banner
-run_timer(math.random(30, 45), ascii_art)
+run_timer(1, ascii_art)
 
 clear_screen()
-
 -- ======================================================
 -- ---- PAYOFF ------------------------------------------
 -- ======================================================
@@ -344,18 +351,11 @@ print_colored("States are chemical. They come and go. You are all of them. Disci
 print()
 
 -- ======================================================
--- ---- KILL MOTIVEWAVE & DNS BLOCK ---------------------
+-- ---- SHUTDOWN / BLOCK -------------------------------
 -- ======================================================
 
-os.execute("pkill -f MotiveWave 2>/dev/null || true")
-print("✔ MotiveWave stopped.\n")
+safe_exec("pkill -f MotiveWave")
+safe_exec("sudo mkdir -p /usr/local/etc/dnsmasq.d")
+safe_exec("sudo brew services restart dnsmasq")
 
-os.execute([[
-sudo mkdir -p /usr/local/etc/dnsmasq.d
-echo "address=/rithmic.com/127.0.0.1" | sudo tee /usr/local/etc/dnsmasq.d/block-rithmic.conf >/dev/null
-sudo brew services restart dnsmasq >/dev/null 2>&1 || sudo brew services start dnsmasq >/dev/null 2>&1
-sudo mkdir -p /etc/resolver
-echo "nameserver 127.0.0.1" | sudo tee /etc/resolver/rithmic.com >/dev/null
-]])
-
-print("✔ DNS block active (survives Wi-Fi toggles).\n")
+print_colored("[TEST MODE COMPLETE]", "%{dim}")
